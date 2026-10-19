@@ -166,7 +166,7 @@ def main():
             center_y = int(round(intrinsics.cy))
             draw_crosshair(frame, center_x, center_y)
 
-            # Capture camera orientation before any correction this frame.
+            # Capture camera orientation before this frame's correction.
             camera_pan_before = camera.pan_deg
             camera_tilt_before = camera.tilt_deg
 
@@ -258,8 +258,6 @@ def main():
                     np.hypot(pixel_error_x, pixel_error_y)
                 )
 
-                # Localization error is calculated in the logger using
-                # detector coordinates versus synthetic ground truth.
                 cv2.circle(
                     frame,
                     (
@@ -272,7 +270,7 @@ def main():
                     cv2.LINE_AA,
                 )
 
-                # Record first threshold crossing before this frame's move.
+                # Mark the first threshold crossing before this frame's move.
                 if (
                     test_phase == "REACQUISITION"
                     and recovery_time is None
@@ -297,8 +295,15 @@ def main():
                     angular_error_pan = control_info["pan_error_deg"]
                     angular_error_tilt = control_info["tilt_error_deg"]
 
-            # Count EVERY processed frame in the stability window.
-            # A missing detection is a failure, not an excluded sample.
+            # ---------------------------------------------------------
+            # FIXED STABILITY EVALUATION
+            #
+            # Denominator: EVERY processed frame during the 1-second
+            # window, including frames with no detection.
+            #
+            # Numerator: only frames with a detection whose pixel error
+            # is <= RECOVERY_THRESHOLD_PX.
+            # ---------------------------------------------------------
             if (
                 stability_start_time is not None
                 and not stability_complete
@@ -307,9 +312,12 @@ def main():
                 now = time.perf_counter()
                 window_elapsed = now - stability_start_time
 
-                if window_elapsed <= STABILITY_WINDOW_SECONDS:
+                if window_elapsed < STABILITY_WINDOW_SECONDS:
+                    # Every frame counts in the denominator.
                     stability_samples += 1
 
+                    # Only successful, in-threshold detections count
+                    # in the numerator.
                     if (
                         detection is not None
                         and error_px is not None
@@ -318,16 +326,24 @@ def main():
                         stable_samples += 1
 
                 else:
+                    # The full one-second window has elapsed.
                     stability_complete = True
-                    if stability_samples:
-                        ratio = stable_samples / stability_samples
-                        print(
-                            "Post-recovery stability: "
-                            f"{stable_samples}/{stability_samples} frames "
-                            f"within threshold ({100.0 * ratio:.1f}%)."
-                        )
-                    else:
-                        print("Post-recovery stability: no samples.")
+
+                    stability_ratio = (
+                        stable_samples / stability_samples
+                        if stability_samples > 0
+                        else 0.0
+                    )
+
+                    print(
+                        "Post-recovery stability: "
+                        f"{stable_samples}/{stability_samples} frames "
+                        f"within threshold "
+                        f"({100.0 * stability_ratio:.1f}%)."
+                    )
+
+                    if stability_samples == 0:
+                        print("Warning: no frames were sampled.")
 
             # Frame processing duration excludes display and waitKey.
             frame_end = time.perf_counter()
@@ -484,17 +500,19 @@ def main():
             else:
                 print("Recovery threshold was not reached.")
 
-        if stability_complete and stability_samples:
+        if stability_complete and stability_samples > 0:
+            final_stability_ratio = stable_samples / stability_samples
             print(
                 "Post-recovery stability: "
                 f"{stable_samples}/{stability_samples} frames "
-                f"({100.0 * stable_samples / stability_samples:.1f}%)."
+                f"({100.0 * final_stability_ratio:.1f}%)."
             )
-        elif stability_samples:
+        elif stability_samples > 0:
+            partial_ratio = stable_samples / stability_samples
             print(
                 "Stability window incomplete: "
                 f"{stable_samples}/{stability_samples} frames passed "
-                "before exit."
+                f"({100.0 * partial_ratio:.1f}%) before exit."
             )
         else:
             print("Post-recovery stability samples: none.")
