@@ -1,15 +1,16 @@
 
 """
 ISRO FSOC Virtual Camera Tracking System
-Milestone 3.3: Automatic Beacon Loss and Recovery Test
+Milestone 3.4: Ground-Truth Evaluation and Recovery Stability
 
-Run:
+Run from project root:
     python -m fsoc_tracker.main
 
-Test sequence:
-    0-3 s : Beacon visible, auto-tracking ON
-    3-5 s : Beacon hidden automatically
-    5+ s  : Beacon visible again; measure recovery and stability
+Automatic test sequence:
+    Warm-up       : Beacon visible, auto-tracking ON
+    Beacon loss   : Beacon hidden automatically
+    Reacquisition : Beacon becomes visible again
+    Stability     : Evaluate every frame for 1 second after recovery
 
 Controls:
     Arrows  : Manual pan/tilt
@@ -74,7 +75,6 @@ def main():
     controller = ProportionalTracker()
     logger = PerformanceLogger()
 
-    # Automatic test: no A/B key presses required.
     auto_track = True
     paused = False
 
@@ -85,23 +85,21 @@ def main():
     fps = 0.0
     frame_count = 0
 
-    # Test state and timestamps.
     test_phase = "WARMUP"
     loss_start_time = None
     beacon_show_time = None
     reacquisition_time = None
     recovery_time = None
 
-    # Post-recovery stability measurements.
     stability_start_time = None
     stability_samples = 0
     stable_samples = 0
     stability_complete = False
 
-    print("=" * 58)
-    print("ISRO FSOC - Milestone 3.3")
-    print("Automatic Beacon Loss and Recovery Test")
-    print("=" * 58)
+    print("=" * 60)
+    print("ISRO FSOC - Milestone 3.4")
+    print("Ground-Truth Evaluation and Recovery Stability")
+    print("=" * 60)
     print(f"Warm-up: {WARMUP_SECONDS:.1f} s")
     print(f"Beacon loss: {LOSS_SECONDS:.1f} s")
     print(f"Recovery threshold: {RECOVERY_THRESHOLD_PX:.1f} px")
@@ -109,7 +107,7 @@ def main():
     print("Auto-tracking starts ON.")
     print("Arrows: manual | R: reset | Space: pause target")
     print("Q / Esc: quit and save reports")
-    print("=" * 58)
+    print("=" * 60)
 
     try:
         while True:
@@ -122,7 +120,7 @@ def main():
             if not paused:
                 beacon.advance(dt)
 
-            # Automatic test phases.
+            # Schedule the automatic beacon-loss experiment.
             if test_phase == "WARMUP" and elapsed >= WARMUP_SECONDS:
                 test_phase = "BEACON_LOSS"
                 loss_start_time = frame_start
@@ -168,10 +166,29 @@ def main():
             center_y = int(round(intrinsics.cy))
             draw_crosshair(frame, center_x, center_y)
 
-            # Ground-truth projection is used only for rendering.
+            # Capture camera orientation before any correction this frame.
+            camera_pan_before = camera.pan_deg
+            camera_tilt_before = camera.tilt_deg
+
+            # Synthetic ground truth, independent of detector output.
             target_point = camera.project_angles(
                 beacon.azimuth_deg,
                 beacon.elevation_deg,
+            )
+
+            target_in_frame = target_point is not None
+
+            ground_truth_x = None
+            ground_truth_y = None
+
+            if target_point is not None:
+                ground_truth_x, ground_truth_y = target_point
+
+            ground_truth_pan_error_deg = (
+                beacon.azimuth_deg - camera_pan_before
+            )
+            ground_truth_tilt_error_deg = (
+                beacon.elevation_deg - camera_tilt_before
             )
 
             if beacon_visible and target_point is not None:
@@ -191,20 +208,26 @@ def main():
                     3, (230, 250, 255), -1, cv2.LINE_AA
                 )
 
-            # Detect before drawing telemetry.
+            # Detect before telemetry is drawn.
             detection = detector.detect(frame)
 
-            # Force loss during the scheduled hidden interval.
+            # A hidden beacon is intentionally unavailable to the detector.
             if not beacon_visible:
                 detection = None
 
+            detected_x = None
+            detected_y = None
+
             pixel_error_x = None
             pixel_error_y = None
-            angular_error_pan = None
-            angular_error_tilt = None
             error_px = None
 
+            angular_error_pan = None
+            angular_error_tilt = None
+
             control_info = {
+                "pan_error_deg": 0.0,
+                "tilt_error_deg": 0.0,
                 "requested_pan_deg": 0.0,
                 "requested_tilt_deg": 0.0,
                 "applied_pan_deg": 0.0,
@@ -213,16 +236,16 @@ def main():
                 "tilt_saturated": False,
             }
 
-            # Detect reacquisition.
+            # Record reacquisition time on the first detection after return.
             if (
                 test_phase == "REACQUISITION"
                 and detection is not None
                 and reacquisition_time is None
             ):
                 reacquisition_time = time.perf_counter()
-                delay = reacquisition_time - beacon_show_time
                 print(
-                    f"Beacon reacquired after {delay:.4f} s."
+                    "Beacon reacquired after "
+                    f"{reacquisition_time - beacon_show_time:.4f} s."
                 )
 
             if detection is not None:
@@ -230,10 +253,13 @@ def main():
 
                 pixel_error_x = detected_x - intrinsics.cx
                 pixel_error_y = intrinsics.cy - detected_y
+
                 error_px = float(
                     np.hypot(pixel_error_x, pixel_error_y)
                 )
 
+                # Localization error is calculated in the logger using
+                # detector coordinates versus synthetic ground truth.
                 cv2.circle(
                     frame,
                     (
@@ -246,19 +272,19 @@ def main():
                     cv2.LINE_AA,
                 )
 
-                # Measure error before applying this frame's correction.
+                # Record first threshold crossing before this frame's move.
                 if (
                     test_phase == "REACQUISITION"
                     and recovery_time is None
                     and error_px <= RECOVERY_THRESHOLD_PX
                 ):
                     recovery_time = time.perf_counter()
-                    delay = recovery_time - beacon_show_time
                     stability_start_time = recovery_time
 
                     print(
                         f"Error reached <= {RECOVERY_THRESHOLD_PX:.1f} px "
-                        f"after {delay:.4f} s from beacon return."
+                        "after "
+                        f"{recovery_time - beacon_show_time:.4f} s."
                     )
 
                 if auto_track:
@@ -271,41 +297,39 @@ def main():
                     angular_error_pan = control_info["pan_error_deg"]
                     angular_error_tilt = control_info["tilt_error_deg"]
 
-            # Measure the one-second window after first reaching threshold.
+            # Count EVERY processed frame in the stability window.
+            # A missing detection is a failure, not an excluded sample.
             if (
                 stability_start_time is not None
                 and not stability_complete
                 and test_phase == "REACQUISITION"
-                and time.perf_counter() - stability_start_time
-                <= STABILITY_WINDOW_SECONDS
-                and detection is not None
             ):
-                stability_samples += 1
-                if error_px <= RECOVERY_THRESHOLD_PX:
-                    stable_samples += 1
+                now = time.perf_counter()
+                window_elapsed = now - stability_start_time
 
-            if (
-                stability_start_time is not None
-                and not stability_complete
-                and time.perf_counter() - stability_start_time
-                > STABILITY_WINDOW_SECONDS
-            ):
-                stability_complete = True
-                if stability_samples:
-                    ratio = stable_samples / stability_samples
-                    print(
-                        "Post-recovery stability: "
-                        f"{stable_samples}/{stability_samples} "
-                        "valid detection samples were evaluated."
-                    )
-                    print(
-                        f"Frames within threshold: "
-                        f"{100.0 * ratio:.1f}%."
-                    )
+                if window_elapsed <= STABILITY_WINDOW_SECONDS:
+                    stability_samples += 1
+
+                    if (
+                        detection is not None
+                        and error_px is not None
+                        and error_px <= RECOVERY_THRESHOLD_PX
+                    ):
+                        stable_samples += 1
+
                 else:
-                    print("Post-recovery stability: no valid samples.")
+                    stability_complete = True
+                    if stability_samples:
+                        ratio = stable_samples / stability_samples
+                        print(
+                            "Post-recovery stability: "
+                            f"{stable_samples}/{stability_samples} frames "
+                            f"within threshold ({100.0 * ratio:.1f}%)."
+                        )
+                    else:
+                        print("Post-recovery stability: no samples.")
 
-            # FPS and processing time.
+            # Frame processing duration excludes display and waitKey.
             frame_end = time.perf_counter()
             processing_ms = (frame_end - frame_start) * 1000.0
 
@@ -338,11 +362,11 @@ def main():
             )
 
             angular_line = (
-                f"Angular error: "
+                f"Controller error: "
                 f"{angular_error_pan:+.2f} / "
                 f"{angular_error_tilt:+.2f} deg"
                 if angular_error_pan is not None
-                else "Angular error: unavailable"
+                else "Controller error: unavailable"
             )
 
             phase_elapsed = (
@@ -352,7 +376,7 @@ def main():
             )
 
             telemetry = [
-                "ISRO FSOC - Automatic Recovery Test",
+                "ISRO FSOC - Ground-Truth Evaluation",
                 f"Phase: {test_phase} | Status: {status}",
                 (
                     f"Target az/el: "
@@ -367,11 +391,11 @@ def main():
                 f"Auto-track: {auto_track} | {pixel_line}",
                 angular_line,
                 (
-                    f"FOV: {intrinsics.hfov_deg:.1f} / "
+                    f"FOV H/V: {intrinsics.hfov_deg:.1f} / "
                     f"{intrinsics.vfov_deg:.1f} deg | FPS: {fps:.1f}"
                 ),
                 f"Processing: {processing_ms:.2f} ms",
-                f"Elapsed since beacon return: {phase_elapsed:.2f} s",
+                f"Since beacon return: {phase_elapsed:.2f} s",
                 "Arrows: manual | R: reset | Space: pause target",
                 "Q/Esc: quit and save",
             ]
@@ -389,9 +413,21 @@ def main():
                 processing_ms=processing_ms,
                 fps=fps,
                 control_info=control_info,
+                phase=test_phase,
+                target_visible=beacon_visible,
+                target_in_frame=target_in_frame,
+                detected_x=detected_x,
+                detected_y=detected_y,
+                ground_truth_x=ground_truth_x,
+                ground_truth_y=ground_truth_y,
+                ground_truth_pan_error_deg=ground_truth_pan_error_deg,
+                ground_truth_tilt_error_deg=ground_truth_tilt_error_deg,
             )
 
-            cv2.imshow("ISRO FSOC - Automatic Recovery Test", frame)
+            cv2.imshow(
+                "ISRO FSOC - Ground-Truth Evaluation",
+                frame,
+            )
 
             key = cv2.waitKey(1) & 0xFF
 
@@ -426,9 +462,9 @@ def main():
         cv2.destroyAllWindows()
         logger.save()
 
-        print("\n" + "=" * 58)
-        print("AUTOMATIC TEST SUMMARY")
-        print("=" * 58)
+        print("\n" + "=" * 60)
+        print("MILESTONE 3.4 TEST SUMMARY")
+        print("=" * 60)
         print(f"Frames processed: {frame_count}")
 
         if beacon_show_time is not None:
@@ -448,11 +484,17 @@ def main():
             else:
                 print("Recovery threshold was not reached.")
 
-        if stability_samples:
+        if stability_complete and stability_samples:
             print(
-                "Post-recovery samples within 5 px: "
-                f"{stable_samples}/{stability_samples} "
-                f"({100.0 * stable_samples / stability_samples:.1f}%)"
+                "Post-recovery stability: "
+                f"{stable_samples}/{stability_samples} frames "
+                f"({100.0 * stable_samples / stability_samples:.1f}%)."
+            )
+        elif stability_samples:
+            print(
+                "Stability window incomplete: "
+                f"{stable_samples}/{stability_samples} frames passed "
+                "before exit."
             )
         else:
             print("Post-recovery stability samples: none.")
