@@ -1,7 +1,7 @@
 
 """
 ISRO FSOC Virtual Camera Tracking System
-Milestone 3.1: Tracking + Controller Diagnostics + Logging
+Milestone 3.2: Beacon Loss + Reacquisition Testing
 
 Run:
     python -m fsoc_tracker.main
@@ -10,7 +10,8 @@ Controls:
     A       : Toggle automatic tracking
     Arrows  : Manual pan/tilt
     R       : Reset camera
-    Space   : Pause/resume target
+    Space   : Pause/resume target motion
+    B       : Toggle simulated beacon visibility
     Q / Esc : Quit and save reports
 """
 
@@ -66,6 +67,11 @@ def main():
 
     auto_track = False
     paused = False
+    beacon_visible = True
+
+    loss_start_time = None
+    loss_count = 0
+    last_loss_duration = None
 
     run_start = time.perf_counter()
     previous_time = run_start
@@ -74,13 +80,14 @@ def main():
     frame_count = 0
 
     print("=" * 58)
-    print("ISRO FSOC - Milestone 3.1")
-    print("Controller Diagnostics + Performance Logging")
+    print("ISRO FSOC - Milestone 3.2")
+    print("Beacon Loss + Reacquisition Testing")
     print("=" * 58)
     print("A       : Toggle automatic tracking")
     print("Arrows  : Manual pan/tilt")
     print("R       : Reset camera")
-    print("Space   : Pause/resume target")
+    print("Space   : Pause/resume target motion")
+    print("B       : Hide/show beacon (loss test)")
     print("Q / Esc : Quit and save reports")
     print("=" * 58)
 
@@ -95,7 +102,7 @@ def main():
             if not paused:
                 beacon.advance(dt)
 
-            # Render synthetic scene.
+            # Render synthetic background.
             frame = np.zeros(
                 (intrinsics.height, intrinsics.width, 3),
                 dtype=np.uint8,
@@ -118,13 +125,14 @@ def main():
             center_y = int(round(intrinsics.cy))
             draw_crosshair(frame, center_x, center_y)
 
-            # Ground-truth projection, used only to render the scene.
+            # Ground-truth projection for scene rendering.
             target_point = camera.project_angles(
                 beacon.azimuth_deg,
                 beacon.elevation_deg,
             )
 
-            if target_point is not None:
+            # Render the beacon only when visible.
+            if beacon_visible and target_point is not None:
                 target_x = int(round(target_point[0]))
                 target_y = int(round(target_point[1]))
 
@@ -143,6 +151,28 @@ def main():
 
             # Detect before drawing telemetry.
             detection = detector.detect(frame)
+
+            # If the beacon is deliberately hidden, treat this as
+            # a simulated target loss even if a detector false positive
+            # were to occur on the background.
+            if not beacon_visible:
+                detection = None
+
+            # Track loss and reacquisition timing.
+            if detection is None:
+                if loss_start_time is None:
+                    loss_start_time = time.perf_counter()
+                    loss_count += 1
+            else:
+                if loss_start_time is not None:
+                    last_loss_duration = (
+                        time.perf_counter() - loss_start_time
+                    )
+                    print(
+                        "Beacon reacquired. Loss duration: "
+                        f"{last_loss_duration:.3f} s"
+                    )
+                    loss_start_time = None
 
             pixel_error_x = None
             pixel_error_y = None
@@ -177,7 +207,6 @@ def main():
                 )
 
                 if auto_track:
-                    # Updated controller returns a diagnostic dictionary.
                     control_info = controller.command(
                         camera,
                         detected_x,
@@ -204,11 +233,13 @@ def main():
 
             frame_count += 1
 
-            # Status and telemetry.
-            if detection is None:
-                status = "NO DETECTION"
+            # Status.
+            if not beacon_visible:
+                status = "BEACON HIDDEN - LOSS TEST"
             elif target_point is None:
                 status = "TARGET OUTSIDE FOV"
+            elif detection is None:
+                status = "NO DETECTION"
             elif auto_track:
                 status = "AUTO-TRACK ACTIVE"
             else:
@@ -237,8 +268,14 @@ def main():
                 f"Tilt saturated: {control_info['tilt_saturated']}"
             )
 
+            current_loss_duration = (
+                time.perf_counter() - loss_start_time
+                if loss_start_time is not None
+                else 0.0
+            )
+
             telemetry = [
-                "ISRO FSOC - Tracking + Diagnostics",
+                "ISRO FSOC - Beacon Loss Test",
                 (
                     f"Target az/el: "
                     f"{beacon.azimuth_deg:+.2f} / "
@@ -257,14 +294,24 @@ def main():
                     f"FOV: {intrinsics.hfov_deg:.1f} / "
                     f"{intrinsics.vfov_deg:.1f} deg | FPS: {fps:.1f}"
                 ),
-                f"Processing: {processing_ms:.2f} ms | Paused: {paused}",
-                "A: auto-track | Arrows: manual | R: reset",
-                "Space: pause | Q/Esc: quit and save",
+                (
+                    f"Loss events: {loss_count} | "
+                    f"Current loss: {current_loss_duration:.2f} s"
+                ),
+                (
+                    f"Last loss duration: "
+                    f"{last_loss_duration:.2f} s"
+                    if last_loss_duration is not None
+                    else "Last loss duration: N/A"
+                ),
+                "A: auto | B: hide/show beacon | R: reset",
+                "Arrows: manual | Space: pause | Q/Esc: quit",
             ]
 
             draw_telemetry(frame, telemetry)
 
-            # Record per-frame data and controller diagnostics.
+            # Record per-frame data. When detection is lost, no controller
+            # command is issued; zero commands are logged for this frame.
             logger.record(
                 elapsed_s=time.perf_counter() - run_start,
                 detected=detection is not None,
@@ -278,7 +325,7 @@ def main():
                 control_info=control_info,
             )
 
-            cv2.imshow("ISRO FSOC - Milestone 3.1", frame)
+            cv2.imshow("ISRO FSOC - Milestone 3.2", frame)
 
             key = cv2.waitKey(1) & 0xFF
 
@@ -291,6 +338,14 @@ def main():
                     "Automatic tracking:",
                     "ON" if auto_track else "OFF",
                 )
+
+            elif key in (ord("b"), ord("B")):
+                beacon_visible = not beacon_visible
+
+                if not beacon_visible:
+                    print("Beacon hidden: simulated target loss.")
+                else:
+                    print("Beacon visible: reacquisition test started.")
 
             elif key in (ord("r"), ord("R")):
                 camera.reset()
