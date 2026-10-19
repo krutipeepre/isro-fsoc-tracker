@@ -1,17 +1,20 @@
 
 """
 ISRO FSOC Virtual Camera Tracking System
-Milestone 3.2: Beacon Loss + Reacquisition Testing
+Milestone 3.3: Automatic Beacon Loss and Recovery Test
 
 Run:
     python -m fsoc_tracker.main
 
+Test sequence:
+    0-3 s : Beacon visible, auto-tracking ON
+    3-5 s : Beacon hidden automatically
+    5+ s  : Beacon visible again; measure recovery and stability
+
 Controls:
-    A       : Toggle automatic tracking
     Arrows  : Manual pan/tilt
     R       : Reset camera
     Space   : Pause/resume target motion
-    B       : Toggle simulated beacon visibility
     Q / Esc : Quit and save reports
 """
 
@@ -25,6 +28,12 @@ from .simulation import MovingBeacon
 from .perception.detector import BrightBeaconDetector
 from .control.controller import ProportionalTracker
 from .evaluation.logger import PerformanceLogger
+
+
+WARMUP_SECONDS = 3.0
+LOSS_SECONDS = 2.0
+STABILITY_WINDOW_SECONDS = 1.0
+RECOVERY_THRESHOLD_PX = 5.0
 
 
 def draw_crosshair(frame, x, y):
@@ -65,42 +74,76 @@ def main():
     controller = ProportionalTracker()
     logger = PerformanceLogger()
 
-    auto_track = False
+    # Automatic test: no A/B key presses required.
+    auto_track = True
     paused = False
-    beacon_visible = True
-
-    loss_start_time = None
-    loss_count = 0
-    last_loss_duration = None
 
     run_start = time.perf_counter()
     previous_time = run_start
     previous_frame_time = run_start
+
     fps = 0.0
     frame_count = 0
 
+    # Test state and timestamps.
+    test_phase = "WARMUP"
+    loss_start_time = None
+    beacon_show_time = None
+    reacquisition_time = None
+    recovery_time = None
+
+    # Post-recovery stability measurements.
+    stability_start_time = None
+    stability_samples = 0
+    stable_samples = 0
+    stability_complete = False
+
     print("=" * 58)
-    print("ISRO FSOC - Milestone 3.2")
-    print("Beacon Loss + Reacquisition Testing")
+    print("ISRO FSOC - Milestone 3.3")
+    print("Automatic Beacon Loss and Recovery Test")
     print("=" * 58)
-    print("A       : Toggle automatic tracking")
-    print("Arrows  : Manual pan/tilt")
-    print("R       : Reset camera")
-    print("Space   : Pause/resume target motion")
-    print("B       : Hide/show beacon (loss test)")
-    print("Q / Esc : Quit and save reports")
+    print(f"Warm-up: {WARMUP_SECONDS:.1f} s")
+    print(f"Beacon loss: {LOSS_SECONDS:.1f} s")
+    print(f"Recovery threshold: {RECOVERY_THRESHOLD_PX:.1f} px")
+    print(f"Stability window: {STABILITY_WINDOW_SECONDS:.1f} s")
+    print("Auto-tracking starts ON.")
+    print("Arrows: manual | R: reset | Space: pause target")
+    print("Q / Esc: quit and save reports")
     print("=" * 58)
 
     try:
         while True:
             frame_start = time.perf_counter()
-            now = frame_start
+            elapsed = frame_start - run_start
 
-            dt = min(max(now - previous_time, 0.0), 0.1)
-            previous_time = now
+            dt = min(max(frame_start - previous_time, 0.0), 0.1)
+            previous_time = frame_start
 
             if not paused:
                 beacon.advance(dt)
+
+            # Automatic test phases.
+            if test_phase == "WARMUP" and elapsed >= WARMUP_SECONDS:
+                test_phase = "BEACON_LOSS"
+                loss_start_time = frame_start
+                print(
+                    f"[{elapsed:.3f} s] Beacon hidden. "
+                    "Loss test started."
+                )
+
+            elif (
+                test_phase == "BEACON_LOSS"
+                and loss_start_time is not None
+                and frame_start - loss_start_time >= LOSS_SECONDS
+            ):
+                test_phase = "REACQUISITION"
+                beacon_show_time = frame_start
+                print(
+                    f"[{elapsed:.3f} s] Beacon visible again. "
+                    "Reacquisition started."
+                )
+
+            beacon_visible = test_phase != "BEACON_LOSS"
 
             # Render synthetic background.
             frame = np.zeros(
@@ -125,13 +168,12 @@ def main():
             center_y = int(round(intrinsics.cy))
             draw_crosshair(frame, center_x, center_y)
 
-            # Ground-truth projection for scene rendering.
+            # Ground-truth projection is used only for rendering.
             target_point = camera.project_angles(
                 beacon.azimuth_deg,
                 beacon.elevation_deg,
             )
 
-            # Render the beacon only when visible.
             if beacon_visible and target_point is not None:
                 target_x = int(round(target_point[0]))
                 target_y = int(round(target_point[1]))
@@ -152,32 +194,15 @@ def main():
             # Detect before drawing telemetry.
             detection = detector.detect(frame)
 
-            # If the beacon is deliberately hidden, treat this as
-            # a simulated target loss even if a detector false positive
-            # were to occur on the background.
+            # Force loss during the scheduled hidden interval.
             if not beacon_visible:
                 detection = None
-
-            # Track loss and reacquisition timing.
-            if detection is None:
-                if loss_start_time is None:
-                    loss_start_time = time.perf_counter()
-                    loss_count += 1
-            else:
-                if loss_start_time is not None:
-                    last_loss_duration = (
-                        time.perf_counter() - loss_start_time
-                    )
-                    print(
-                        "Beacon reacquired. Loss duration: "
-                        f"{last_loss_duration:.3f} s"
-                    )
-                    loss_start_time = None
 
             pixel_error_x = None
             pixel_error_y = None
             angular_error_pan = None
             angular_error_tilt = None
+            error_px = None
 
             control_info = {
                 "requested_pan_deg": 0.0,
@@ -188,11 +213,26 @@ def main():
                 "tilt_saturated": False,
             }
 
+            # Detect reacquisition.
+            if (
+                test_phase == "REACQUISITION"
+                and detection is not None
+                and reacquisition_time is None
+            ):
+                reacquisition_time = time.perf_counter()
+                delay = reacquisition_time - beacon_show_time
+                print(
+                    f"Beacon reacquired after {delay:.4f} s."
+                )
+
             if detection is not None:
                 detected_x, detected_y = detection
 
                 pixel_error_x = detected_x - intrinsics.cx
                 pixel_error_y = intrinsics.cy - detected_y
+                error_px = float(
+                    np.hypot(pixel_error_x, pixel_error_y)
+                )
 
                 cv2.circle(
                     frame,
@@ -206,6 +246,21 @@ def main():
                     cv2.LINE_AA,
                 )
 
+                # Measure error before applying this frame's correction.
+                if (
+                    test_phase == "REACQUISITION"
+                    and recovery_time is None
+                    and error_px <= RECOVERY_THRESHOLD_PX
+                ):
+                    recovery_time = time.perf_counter()
+                    delay = recovery_time - beacon_show_time
+                    stability_start_time = recovery_time
+
+                    print(
+                        f"Error reached <= {RECOVERY_THRESHOLD_PX:.1f} px "
+                        f"after {delay:.4f} s from beacon return."
+                    )
+
                 if auto_track:
                     control_info = controller.command(
                         camera,
@@ -216,7 +271,41 @@ def main():
                     angular_error_pan = control_info["pan_error_deg"]
                     angular_error_tilt = control_info["tilt_error_deg"]
 
-            # Processing time and FPS.
+            # Measure the one-second window after first reaching threshold.
+            if (
+                stability_start_time is not None
+                and not stability_complete
+                and test_phase == "REACQUISITION"
+                and time.perf_counter() - stability_start_time
+                <= STABILITY_WINDOW_SECONDS
+                and detection is not None
+            ):
+                stability_samples += 1
+                if error_px <= RECOVERY_THRESHOLD_PX:
+                    stable_samples += 1
+
+            if (
+                stability_start_time is not None
+                and not stability_complete
+                and time.perf_counter() - stability_start_time
+                > STABILITY_WINDOW_SECONDS
+            ):
+                stability_complete = True
+                if stability_samples:
+                    ratio = stable_samples / stability_samples
+                    print(
+                        "Post-recovery stability: "
+                        f"{stable_samples}/{stability_samples} "
+                        "valid detection samples were evaluated."
+                    )
+                    print(
+                        f"Frames within threshold: "
+                        f"{100.0 * ratio:.1f}%."
+                    )
+                else:
+                    print("Post-recovery stability: no valid samples.")
+
+            # FPS and processing time.
             frame_end = time.perf_counter()
             processing_ms = (frame_end - frame_start) * 1000.0
 
@@ -233,49 +322,38 @@ def main():
 
             frame_count += 1
 
-            # Status.
             if not beacon_visible:
-                status = "BEACON HIDDEN - LOSS TEST"
-            elif target_point is None:
-                status = "TARGET OUTSIDE FOV"
+                status = "BEACON HIDDEN"
             elif detection is None:
                 status = "NO DETECTION"
-            elif auto_track:
-                status = "AUTO-TRACK ACTIVE"
+            elif test_phase == "REACQUISITION":
+                status = "REACQUISITION"
             else:
-                status = "BEACON DETECTED"
+                status = "TRACKING"
 
-            if pixel_error_x is None:
-                pixel_line = "Pixel error: unavailable"
-            else:
-                pixel_line = (
-                    f"Pixel error dx/dy: "
-                    f"{pixel_error_x:+.1f} / "
-                    f"{pixel_error_y:+.1f}"
-                )
-
-            if angular_error_pan is None:
-                angular_line = "Angular error: unavailable"
-            else:
-                angular_line = (
-                    f"Angular error pan/tilt: "
-                    f"{angular_error_pan:+.2f} / "
-                    f"{angular_error_tilt:+.2f} deg"
-                )
-
-            saturation_line = (
-                f"Pan saturated: {control_info['pan_saturated']} | "
-                f"Tilt saturated: {control_info['tilt_saturated']}"
+            pixel_line = (
+                f"Pixel error: {error_px:.2f} px"
+                if error_px is not None
+                else "Pixel error: unavailable"
             )
 
-            current_loss_duration = (
-                time.perf_counter() - loss_start_time
-                if loss_start_time is not None
+            angular_line = (
+                f"Angular error: "
+                f"{angular_error_pan:+.2f} / "
+                f"{angular_error_tilt:+.2f} deg"
+                if angular_error_pan is not None
+                else "Angular error: unavailable"
+            )
+
+            phase_elapsed = (
+                time.perf_counter() - beacon_show_time
+                if beacon_show_time is not None
                 else 0.0
             )
 
             telemetry = [
-                "ISRO FSOC - Beacon Loss Test",
+                "ISRO FSOC - Automatic Recovery Test",
+                f"Phase: {test_phase} | Status: {status}",
                 (
                     f"Target az/el: "
                     f"{beacon.azimuth_deg:+.2f} / "
@@ -286,32 +364,20 @@ def main():
                     f"{camera.pan_deg:+.2f} / "
                     f"{camera.tilt_deg:+.2f} deg"
                 ),
-                f"Status: {status} | Auto-track: {auto_track}",
-                pixel_line,
+                f"Auto-track: {auto_track} | {pixel_line}",
                 angular_line,
-                saturation_line,
                 (
                     f"FOV: {intrinsics.hfov_deg:.1f} / "
                     f"{intrinsics.vfov_deg:.1f} deg | FPS: {fps:.1f}"
                 ),
-                (
-                    f"Loss events: {loss_count} | "
-                    f"Current loss: {current_loss_duration:.2f} s"
-                ),
-                (
-                    f"Last loss duration: "
-                    f"{last_loss_duration:.2f} s"
-                    if last_loss_duration is not None
-                    else "Last loss duration: N/A"
-                ),
-                "A: auto | B: hide/show beacon | R: reset",
-                "Arrows: manual | Space: pause | Q/Esc: quit",
+                f"Processing: {processing_ms:.2f} ms",
+                f"Elapsed since beacon return: {phase_elapsed:.2f} s",
+                "Arrows: manual | R: reset | Space: pause target",
+                "Q/Esc: quit and save",
             ]
 
             draw_telemetry(frame, telemetry)
 
-            # Record per-frame data. When detection is lost, no controller
-            # command is issued; zero commands are logged for this frame.
             logger.record(
                 elapsed_s=time.perf_counter() - run_start,
                 detected=detection is not None,
@@ -325,27 +391,12 @@ def main():
                 control_info=control_info,
             )
 
-            cv2.imshow("ISRO FSOC - Milestone 3.2", frame)
+            cv2.imshow("ISRO FSOC - Automatic Recovery Test", frame)
 
             key = cv2.waitKey(1) & 0xFF
 
             if key in (ord("q"), 27):
                 break
-
-            elif key in (ord("a"), ord("A")):
-                auto_track = not auto_track
-                print(
-                    "Automatic tracking:",
-                    "ON" if auto_track else "OFF",
-                )
-
-            elif key in (ord("b"), ord("B")):
-                beacon_visible = not beacon_visible
-
-                if not beacon_visible:
-                    print("Beacon hidden: simulated target loss.")
-                else:
-                    print("Beacon visible: reacquisition test started.")
 
             elif key in (ord("r"), ord("R")):
                 camera.reset()
@@ -374,8 +425,39 @@ def main():
     finally:
         cv2.destroyAllWindows()
         logger.save()
+
+        print("\n" + "=" * 58)
+        print("AUTOMATIC TEST SUMMARY")
+        print("=" * 58)
         print(f"Frames processed: {frame_count}")
-        print("FSOC simulator closed. Reports saved.")
+
+        if beacon_show_time is not None:
+            if reacquisition_time is not None:
+                print(
+                    "Reacquisition delay: "
+                    f"{reacquisition_time - beacon_show_time:.4f} s"
+                )
+            else:
+                print("Reacquisition delay: not measured.")
+
+            if recovery_time is not None:
+                print(
+                    "Recovery delay (<=5 px): "
+                    f"{recovery_time - beacon_show_time:.4f} s"
+                )
+            else:
+                print("Recovery threshold was not reached.")
+
+        if stability_samples:
+            print(
+                "Post-recovery samples within 5 px: "
+                f"{stable_samples}/{stability_samples} "
+                f"({100.0 * stable_samples / stability_samples:.1f}%)"
+            )
+        else:
+            print("Post-recovery stability samples: none.")
+
+        print("Reports saved. FSOC simulator closed.")
 
 
 if __name__ == "__main__":
