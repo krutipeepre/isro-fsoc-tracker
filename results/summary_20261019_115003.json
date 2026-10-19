@@ -1,0 +1,16 @@
+{
+  "generated_utc": "2026-10-19T06:21:26.642747+00:00",
+  "duration_s": 83.322,
+  "frames_logged": 7692,
+  "detection_count": 7692,
+  "auto_track_frames": 7026,
+  "tracking_error_sample_count": 7026,
+  "mean_pixel_error_px": 1.6331,
+  "p95_pixel_error_px": 2.5495,
+  "max_pixel_error_px": 162.888,
+  "detection_rate_all_frames": 1.0,
+  "mean_processing_ms": 6.5221,
+  "p95_processing_ms": 8.0063,
+  "metric_note": "Pixel error is distance from detected beacon to image center, measured only on frames with auto-track enabled and a detection. It is not ground-truth angular tracking error or lock retention.",
+  "csv_file": "results\\tracking_20261019_115003.csv"
+}
