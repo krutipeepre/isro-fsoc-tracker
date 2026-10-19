@@ -1,0 +1,10 @@
+b5dabf7 | author=2026-10-20T00:29:06+05:30 | committer=2026-10-20T00:29:06+05:30 | [krutipeepre.research@gmail.com](mailto:krutipeepre.research@gmail.com) | modified:   src/fsoc_tracker/simulation.py What we've added - Atmospheric jitter: adds random angular fluctuations to the apparent beacon position. - Platform vibration: produces sinusoidal pan/tilt disturbance offsets. - Camera drift: models a gradual pointing offset. - Repeatability: a fixed random seed makes jitter reproducible for testing.
+c708f48 | author=2026-10-19T20:27:46+05:30 | committer=2026-10-19T20:27:46+05:30 | [krutipeepre.research@gmail.com](mailto:krutipeepre.research@gmail.com) | Tests 12, 13, 14, 15, 16, 17 | 3.4
+c4d93ad | author=2026-10-19T20:25:47+05:30 | committer=2026-10-19T20:25:47+05:30 | [krutipeepre.research@gmail.com](mailto:krutipeepre.research@gmail.com) | 3.4 | Updated main.py
+ad8e5c1 | author=2026-10-19T20:20:05+05:30 | committer=2026-10-19T20:20:05+05:30 | [krutipeepre.research@gmail.com](mailto:krutipeepre.research@gmail.com) | test 9, 10, 11 | 3.4
+3fbb321 | author=2026-10-19T20:18:44+05:30 | committer=2026-10-19T20:18:44+05:30 | [krutipeepre.research@gmail.com](mailto:krutipeepre.research@gmail.com) | 3.4 — Ground-truth evaluation | updated main.py
+79cebbf | author=2026-10-19T20:17:18+05:30 | committer=2026-10-19T20:17:18+05:30 | [krutipeepre.research@gmail.com](mailto:krutipeepre.research@gmail.com) | updated logger.py
+3be7059 | author=2026-10-19T20:02:33+05:30 | committer=2026-10-19T20:02:33+05:30 | [krutipeepre.research@gmail.com](mailto:krutipeepre.research@gmail.com) | Test 7 & 8
+9f5ef79 | author=2026-10-19T20:00:00+05:30 | committer=2026-10-19T20:00:00+05:30 | [krutipeepre.research@gmail.com](mailto:krutipeepre.research@gmail.com) | Test 6
+ee90635 | author=2026-10-19T19:58:46+05:30 | committer=2026-10-19T19:58:46+05:30 | [krutipeepre.research@gmail.com](mailto:krutipeepre.research@gmail.com) | Implemented Automatic testing
+5cac640 | author=2026-10-19T19:37:41+05:30 | committer=2026-10-19T19:37:41+05:30 | [krutipeepre.research@gmail.com](mailto:krutipeepre.research@gmail.com) | test 5
