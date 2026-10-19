@@ -7,7 +7,7 @@ import math
 class ProportionalTracker:
     gain: float = 0.65
     max_step_deg: float = 2.0
-    deadband_px: float = 4.0
+    deadband_px: float = 2.0
 
     def command(self, camera, u: float, v: float):
         intr = camera.intrinsics
