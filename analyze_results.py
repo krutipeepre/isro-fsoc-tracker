@@ -44,3 +44,39 @@ print("\n--- FRAMES ABOVE 10 PIXELS ---")
 bad = tracking[tracking["pixel_error"] > 10]
 print("Count:", len(bad))
 print("Percentage:", round(100 * len(bad) / max(1, len(tracking)), 3), "%")
+
+
+# Investigate the largest tracking-error spikes.
+tracking = tracking.sort_values("elapsed_s").reset_index(drop=True)
+
+tracking["pixel_error"] = np.hypot(
+    tracking["pixel_error_x"],
+    tracking["pixel_error_y"]
+)
+
+spikes = tracking[tracking["pixel_error"] > 10]
+
+print("\n--- SPIKE EVENTS ---")
+
+for _, spike in spikes.iterrows():
+    t = spike["elapsed_s"]
+
+    window = tracking[
+        (tracking["elapsed_s"] >= t - 0.15) &
+        (tracking["elapsed_s"] <= t + 0.15)
+    ]
+
+    print(f"\nSpike at {t:.3f} seconds")
+    print(
+        window[
+            [
+                "elapsed_s",
+                "pixel_error_x",
+                "pixel_error_y",
+                "pixel_error",
+                "pan_deg",
+                "tilt_deg",
+                "processing_ms",
+            ]
+        ].to_string(index=False)
+    )

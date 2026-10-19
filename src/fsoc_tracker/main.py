@@ -1,7 +1,7 @@
 
 """
 ISRO FSOC Virtual Camera Tracker
-Milestone 3: Automatic Tracking + Performance Logging
+Milestone 3: Tracking, Performance Logging & Diagnostics
 
 Run:
     python -m fsoc_tracker.main
@@ -9,9 +9,9 @@ Run:
 Controls:
     A       : Toggle automatic tracking
     Arrows  : Manual camera movement
-    R       : Reset camera orientation
-    Space   : Pause/resume target motion
-    Q / Esc : Quit and save performance reports
+    R       : Reset camera
+    Space   : Pause/resume target
+    Q / Esc : Quit and save reports
 """
 
 import time
@@ -26,25 +26,25 @@ from .control.controller import ProportionalTracker
 from .evaluation.logger import PerformanceLogger
 
 
-def draw_crosshair(frame, x, y, color=(90, 90, 90)):
-    """Draw the center of the camera image."""
+def draw_crosshair(frame, x, y):
+    """Draw the optical-axis center."""
     cv2.line(
         frame, (x - 12, y), (x + 12, y),
-        color, 1, cv2.LINE_AA
+        (90, 90, 90), 1, cv2.LINE_AA
     )
     cv2.line(
         frame, (x, y - 12), (x, y + 12),
-        color, 1, cv2.LINE_AA
+        (90, 90, 90), 1, cv2.LINE_AA
     )
 
 
-def draw_text(frame, lines):
-    """Draw telemetry without interfering with beacon detection."""
-    for index, line in enumerate(lines):
+def draw_telemetry(frame, lines):
+    """Draw telemetry after beacon detection."""
+    for i, line in enumerate(lines):
         cv2.putText(
             frame,
             line,
-            (14, 22 + index * 22),
+            (14, 22 + i * 22),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.45,
             (225, 230, 235),
@@ -54,7 +54,7 @@ def draw_text(frame, lines):
 
 
 def main():
-    # 1. Initialize simulation.
+    # 1. Simulation setup.
     intrinsics = CameraIntrinsics(
         width=640,
         height=480,
@@ -64,7 +64,7 @@ def main():
     camera = VirtualCamera(intrinsics=intrinsics)
     beacon = MovingBeacon()
 
-    # 2. Initialize perception, control, and evaluation.
+    # 2. Perception, control and performance logger.
     detector = BrightBeaconDetector()
     controller = ProportionalTracker()
     logger = PerformanceLogger()
@@ -75,11 +75,12 @@ def main():
     run_start = time.perf_counter()
     previous_time = run_start
     previous_frame_time = run_start
+
     fps = 0.0
+    frame_count = 0
 
     print("=" * 58)
-    print("ISRO FSOC - Virtual Camera Tracking System")
-    print("Milestone 3: Tracking + Performance Logging")
+    print("ISRO FSOC - Tracking + Controller Diagnostics")
     print("=" * 58)
     print("A       : Toggle automatic tracking")
     print("Arrows  : Manual pan/tilt")
@@ -93,14 +94,13 @@ def main():
             frame_start = time.perf_counter()
             now = frame_start
 
-            # Bound time increments after any temporary window stall.
             dt = min(max(now - previous_time, 0.0), 0.1)
             previous_time = now
 
             if not paused:
                 beacon.advance(dt)
 
-            # 3. Render synthetic camera image.
+            # 3. Render synthetic scene.
             frame = np.zeros(
                 (intrinsics.height, intrinsics.width, 3),
                 dtype=np.uint8,
@@ -123,7 +123,7 @@ def main():
             center_y = int(round(intrinsics.cy))
             draw_crosshair(frame, center_x, center_y)
 
-            # 4. Project the target into the virtual camera.
+            # 4. Ground-truth target projection for simulation.
             target_point = camera.project_angles(
                 beacon.azimuth_deg,
                 beacon.elevation_deg,
@@ -146,7 +146,7 @@ def main():
                     3, (230, 250, 255), -1, cv2.LINE_AA
                 )
 
-            # 5. Detect before drawing telemetry text.
+            # 5. Detect beacon before drawing text.
             detection = detector.detect(frame)
 
             pixel_error_x = None
@@ -154,48 +154,44 @@ def main():
             angular_error_pan = None
             angular_error_tilt = None
 
+            control_info = {
+                "requested_pan_deg": 0.0,
+                "requested_tilt_deg": 0.0,
+                "applied_pan_deg": 0.0,
+                "applied_tilt_deg": 0.0,
+                "pan_saturated": False,
+                "tilt_saturated": False,
+            }
+
             if detection is not None:
                 detected_x, detected_y = detection
 
                 pixel_error_x = detected_x - intrinsics.cx
                 pixel_error_y = intrinsics.cy - detected_y
 
-                # Green marker = detected beacon location.
+                # Green marker indicates detected beacon center.
                 cv2.circle(
                     frame,
-                    (
-                        int(round(detected_x)),
-                        int(round(detected_y)),
-                    ),
+                    (int(round(detected_x)), int(round(detected_y))),
                     11,
                     (0, 255, 0),
                     1,
                     cv2.LINE_AA,
                 )
 
-                cv2.circle(
-                    frame,
-                    (
-                        int(round(detected_x)),
-                        int(round(detected_y)),
-                    ),
-                    2,
-                    (0, 255, 0),
-                    -1,
-                )
-
-                # 6. Automatic feedback control.
                 if auto_track:
-                    (
-                        angular_error_pan,
-                        angular_error_tilt,
-                    ) = controller.command(
+                    # UPDATED CONTROLLER INTEGRATION:
+                    # command() now returns a diagnostic dictionary.
+                    control_info = controller.command(
                         camera,
                         detected_x,
                         detected_y,
                     )
 
-            # 7. FPS estimate.
+                    angular_error_pan = control_info["pan_error_deg"]
+                    angular_error_tilt = control_info["tilt_error_deg"]
+
+            # 6. Frame processing time and FPS.
             frame_end = time.perf_counter()
             processing_ms = (frame_end - frame_start) * 1000.0
 
@@ -203,14 +199,16 @@ def main():
             previous_frame_time = frame_end
 
             if frame_elapsed > 0:
-                current_fps = 1.0 / frame_elapsed
+                instant_fps = 1.0 / frame_elapsed
                 fps = (
-                    0.9 * fps + 0.1 * current_fps
+                    0.9 * fps + 0.1 * instant_fps
                     if fps > 0
-                    else current_fps
+                    else instant_fps
                 )
 
-            # 8. Status.
+            frame_count += 1
+
+            # 7. Status.
             if detection is None:
                 status = "NO DETECTION"
             elif target_point is None:
@@ -223,25 +221,30 @@ def main():
             mode = "ON" if auto_track else "OFF"
 
             if pixel_error_x is not None:
-                pixel_error_text = (
+                pixel_line = (
                     f"Pixel error dx/dy: "
                     f"{pixel_error_x:+.1f} / "
                     f"{pixel_error_y:+.1f}"
                 )
             else:
-                pixel_error_text = "Pixel error: unavailable"
+                pixel_line = "Pixel error: unavailable"
 
             if angular_error_pan is not None:
-                angular_error_text = (
-                    f"Command error pan/tilt: "
+                angular_line = (
+                    f"Angular error pan/tilt: "
                     f"{angular_error_pan:+.2f} / "
                     f"{angular_error_tilt:+.2f} deg"
                 )
             else:
-                angular_error_text = "Command error: unavailable"
+                angular_line = "Angular error: unavailable"
+
+            saturation = (
+                f"Pan saturated: {control_info['pan_saturated']} | "
+                f"Tilt saturated: {control_info['tilt_saturated']}"
+            )
 
             telemetry = [
-                "ISRO FSOC - Tracking + Performance Monitor",
+                "ISRO FSOC - Tracking + Diagnostics",
                 (
                     f"Target az/el: "
                     f"{beacon.azimuth_deg:+.2f} / "
@@ -253,8 +256,9 @@ def main():
                     f"{camera.tilt_deg:+.2f} deg"
                 ),
                 f"Status: {status} | Auto-track: {mode}",
-                pixel_error_text,
-                angular_error_text,
+                pixel_line,
+                angular_line,
+                saturation,
                 (
                     f"FOV: {intrinsics.hfov_deg:.1f} / "
                     f"{intrinsics.vfov_deg:.1f} deg | FPS: {fps:.1f}"
@@ -264,9 +268,10 @@ def main():
                 "Space: pause | Q/Esc: quit and save reports",
             ]
 
-            draw_text(frame, telemetry)
+            draw_telemetry(frame, telemetry)
 
-            # 9. Record every frame.
+            # 8. Log the frame.
+            # Existing logger schema is preserved for compatibility.
             logger.record(
                 elapsed_s=time.perf_counter() - run_start,
                 detected=detection is not None,
@@ -281,7 +286,7 @@ def main():
 
             cv2.imshow("ISRO FSOC - Milestone 3", frame)
 
-            # 10. Keyboard input.
+            # 9. Keyboard controls.
             key = cv2.waitKey(1) & 0xFF
 
             if key in (ord("q"), 27):
@@ -306,22 +311,23 @@ def main():
                     else "Simulation resumed."
                 )
 
-            elif key == 81:  # Left arrow
+            elif key == 81:  # Left
                 camera.move(delta_pan_deg=-1.0)
 
-            elif key == 83:  # Right arrow
+            elif key == 83:  # Right
                 camera.move(delta_pan_deg=1.0)
 
-            elif key == 82:  # Up arrow
+            elif key == 82:  # Up
                 camera.move(delta_tilt_deg=1.0)
 
-            elif key == 84:  # Down arrow
+            elif key == 84:  # Down
                 camera.move(delta_tilt_deg=-1.0)
 
     finally:
         cv2.destroyAllWindows()
         logger.save()
-        print("FSOC simulator closed.")
+        print(f"Frames processed: {frame_count}")
+        print("FSOC simulator closed. Reports saved.")
 
 
 if __name__ == "__main__":
