@@ -1,0 +1,61 @@
+{
+  "generated_utc": "2026-10-19T14:56:59.128609+00:00",
+  "duration_s": 6.971,
+  "frames_logged": 507,
+  "detection_count_all_frames": 365,
+  "detection_rate_all_frames": 0.7199,
+  "visible_in_frame_expected_detection_frames": 365,
+  "detections_when_target_visible_and_in_frame": 365,
+  "detection_recall_when_target_visible_and_in_frame": 1.0,
+  "false_detections_outside_expected_visibility": 0,
+  "auto_track_frames": 507,
+  "tracking_error_px": {
+    "sample_count": 365,
+    "mean": 7.3893,
+    "median": 2.5495,
+    "p95": 5.1478,
+    "max": 256.9757
+  },
+  "ground_truth_localization_error_px": {
+    "sample_count": 365,
+    "mean": 1.4418,
+    "median": 1.477,
+    "p95": 1.8931,
+    "max": 2.0779
+  },
+  "absolute_ground_truth_pan_error_deg": {
+    "sample_count": 365,
+    "mean": 0.662,
+    "median": 0.174,
+    "p95": 0.4298,
+    "max": 24.8307
+  },
+  "absolute_ground_truth_tilt_error_deg": {
+    "sample_count": 365,
+    "mean": 0.2018,
+    "median": 0.2048,
+    "p95": 0.3273,
+    "max": 2.7486
+  },
+  "tracking_frames_over_5px": 20,
+  "tracking_frames_over_10px": 15,
+  "processing_ms": {
+    "sample_count": 507,
+    "mean": 7.1337,
+    "median": 7.3518,
+    "p95": 8.3995,
+    "max": 10.3646
+  },
+  "pan_saturation_frames": 12,
+  "tilt_saturation_frames": 0,
+  "csv_file": "results\\tracking_20261019_202652.csv",
+  "metric_notes": [
+    "Pixel tracking error is distance from detected beacon to image center.",
+    "Localization error compares detected beacon coordinates with synthetic ground-truth coordinates.",
+    "Ground-truth angular errors are computed from target angles and camera orientation.",
+    "Detection recall only uses frames where the target is visible and inside the camera field of view.",
+    "Intentional beacon-loss frames are not counted as expected detections.",
+    "Processing time measures the timed frame-processing section, not full display-loop latency.",
+    "Results are from a synthetic simulator and do not establish real FSOC hardware performance."
+  ]
+}
