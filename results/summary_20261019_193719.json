@@ -1,0 +1,19 @@
+{
+  "generated_utc": "2026-10-19T14:07:33.855929+00:00",
+  "duration_s": 14.518,
+  "frames_logged": 935,
+  "detection_count": 563,
+  "auto_track_frames": 859,
+  "tracking_error_sample_count": 487,
+  "mean_pixel_error_px": 7.5567,
+  "p95_pixel_error_px": 5.535,
+  "max_pixel_error_px": 266.9953,
+  "frames_over_10px": 21,
+  "detection_rate_all_frames": 0.6021,
+  "mean_processing_ms": 6.9677,
+  "p95_processing_ms": 7.934,
+  "pan_saturation_frames": 17,
+  "tilt_saturation_frames": 6,
+  "csv_file": "results\\tracking_20261019_193719.csv",
+  "metric_note": "Pixel error is measured relative to image center. Saturation counts are based on controller requests. Ground-truth tracking accuracy is not established."
+}
