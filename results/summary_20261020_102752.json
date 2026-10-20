@@ -1,0 +1,94 @@
+{
+  "generated_utc": "2026-10-20T04:57:58.447655+00:00",
+  "duration_s": 5.951,
+  "frames_logged": 377,
+  "detection_count_all_frames": 247,
+  "detection_rate_all_frames": 0.6552,
+  "visible_in_frame_expected_detection_frames": 247,
+  "detections_when_target_visible_and_in_frame": 247,
+  "detection_recall_when_target_visible_and_in_frame": 1.0,
+  "lock_retention_rate": 1.0,
+  "false_detections_outside_expected_visibility": 0,
+  "auto_track_frames": 377,
+  "tracking_error_px": {
+    "sample_count": 247,
+    "mean": 10.0422,
+    "median": 2.9155,
+    "p95": 23.9016,
+    "max": 261.0603
+  },
+  "tracking_error_px_by_phase": {
+    "BEACON_LOSS": {
+      "sample_count": 0,
+      "mean": null,
+      "median": null,
+      "p95": null,
+      "max": null
+    },
+    "REACQUISITION": {
+      "sample_count": 60,
+      "mean": 32.4832,
+      "median": 2.9155,
+      "p95": 196.5569,
+      "max": 261.0603
+    },
+    "WARMUP": {
+      "sample_count": 187,
+      "mean": 2.8419,
+      "median": 2.9155,
+      "p95": 4.3012,
+      "max": 17.5642
+    }
+  },
+  "ground_truth_localization_error_px": {
+    "sample_count": 247,
+    "mean": 1.5605,
+    "median": 1.542,
+    "p95": 2.5165,
+    "max": 2.9055
+  },
+  "absolute_ground_truth_pan_error_deg": {
+    "sample_count": 247,
+    "mean": 0.936,
+    "median": 0.2203,
+    "p95": 2.3207,
+    "max": 25.179
+  },
+  "absolute_ground_truth_tilt_error_deg": {
+    "sample_count": 247,
+    "mean": 0.228,
+    "median": 0.2194,
+    "p95": 0.3548,
+    "max": 2.8319
+  },
+  "tracking_frames_over_5px": 17,
+  "tracking_frames_over_10px": 16,
+  "processing_ms": {
+    "sample_count": 377,
+    "mean": 7.1208,
+    "median": 7.1615,
+    "p95": 8.345,
+    "max": 10.873
+  },
+  "fps": {
+    "sample_count": 377,
+    "mean": 68.7321,
+    "median": 66.0075,
+    "p95": 83.1537,
+    "max": 103.3528
+  },
+  "pan_saturation_frames": 12,
+  "tilt_saturation_frames": 0,
+  "csv_file": "results\\tracking_20261020_102752.csv",
+  "metric_notes": [
+    "Pixel tracking error is the distance from the detected beacon to the image centre.",
+    "Localization error compares detected coordinates with ground-truth coordinates supplied by main.py.",
+    "Ground-truth localization accuracy depends on main.py supplying coordinates consistent with the rendered scene.",
+    "Detection recall uses frames where the target is visible and inside the field of view.",
+    "Lock retention rate currently uses the same eligible frames as detection recall.",
+    "Phase-specific tracking statistics include detected frames with auto-tracking enabled.",
+    "Intentional beacon-loss frames are excluded from expected detections.",
+    "Processing time measures the timed frame-processing section, not full display-loop latency.",
+    "These results come from a synthetic simulator and do not establish real FSOC hardware performance."
+  ]
+}
