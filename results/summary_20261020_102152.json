@@ -1,0 +1,61 @@
+{
+  "generated_utc": "2026-10-20T04:51:59.190581+00:00",
+  "duration_s": 7.058,
+  "frames_logged": 450,
+  "detection_count_all_frames": 327,
+  "detection_rate_all_frames": 0.7267,
+  "visible_in_frame_expected_detection_frames": 327,
+  "detections_when_target_visible_and_in_frame": 327,
+  "detection_recall_when_target_visible_and_in_frame": 1.0,
+  "false_detections_outside_expected_visibility": 0,
+  "auto_track_frames": 450,
+  "tracking_error_px": {
+    "sample_count": 327,
+    "mean": 8.1223,
+    "median": 2.9155,
+    "p95": 5.535,
+    "max": 260.9531
+  },
+  "ground_truth_localization_error_px": {
+    "sample_count": 327,
+    "mean": 1.5516,
+    "median": 1.5742,
+    "p95": 2.4093,
+    "max": 2.7399
+  },
+  "absolute_ground_truth_pan_error_deg": {
+    "sample_count": 327,
+    "mean": 0.7441,
+    "median": 0.1949,
+    "p95": 0.5183,
+    "max": 25.1338
+  },
+  "absolute_ground_truth_tilt_error_deg": {
+    "sample_count": 327,
+    "mean": 0.2013,
+    "median": 0.1989,
+    "p95": 0.3662,
+    "max": 2.7321
+  },
+  "tracking_frames_over_5px": 18,
+  "tracking_frames_over_10px": 15,
+  "processing_ms": {
+    "sample_count": 450,
+    "mean": 6.8606,
+    "median": 7.0335,
+    "p95": 8.1723,
+    "max": 11.0353
+  },
+  "pan_saturation_frames": 12,
+  "tilt_saturation_frames": 0,
+  "csv_file": "results\\tracking_20261020_102152.csv",
+  "metric_notes": [
+    "Pixel tracking error is distance from detected beacon to image center.",
+    "Localization error compares detected beacon coordinates with synthetic ground-truth coordinates.",
+    "Ground-truth angular errors are computed from target angles and camera orientation.",
+    "Detection recall only uses frames where the target is visible and inside the camera field of view.",
+    "Intentional beacon-loss frames are not counted as expected detections.",
+    "Processing time measures the timed frame-processing section, not full display-loop latency.",
+    "Results are from a synthetic simulator and do not establish real FSOC hardware performance."
+  ]
+}
